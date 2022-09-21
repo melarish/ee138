@@ -1,12 +1,12 @@
 #include "msp.h"
-#include "stdio.h"
-#include <time.h>
+#include "string.h"
 
 
-int rowx,colx,ptr,state,counter,k,d,lock_state,lock_counter,key_pressed;
+int rowx,colx,ptr,state,counter,k,d,lock_state,lock_counter,key_pressed,passcode_complete;
 int pass_code[4];
 int *display;
 int inNum[4]={16,16,16,16};
+int blank[4]={16,16,16,16};
 int idle[4]={0,0,0,0};
 int lock[4]={16,15,0,12};
 int open[4]={0,17,14,18};
@@ -43,8 +43,6 @@ void delay(int millis)
 {
     int i;
     for(i=0; i<millis;i++) {}
-//    clock_t start_time = clock();
-//    while (clock() < start_time + millis);
 }
 
 void input_key()
@@ -104,7 +102,11 @@ void keypad_function()
                {
                    inNum[ptr]=key_pressed;
                    ptr++;
-                   if(ptr==4) {ptr=0;}
+                   if(ptr==4)
+                   {
+                       passcode_complete=1;
+                       ptr=0;
+                   }
                }
                state=3;
                counter=0;
@@ -133,6 +135,7 @@ void lockbox_fn()
        {
            display=idle;
            P5->OUT=BIT0;
+           passcode_complete=0;
            keypad_function();
            if(key_pressed==10)
            {
@@ -150,7 +153,7 @@ void lockbox_fn()
        case(1): //Solenoid on
        {
            display=open;
-           if(lock_counter>40)
+           if(lock_counter>20)
            {
                lock_state=0;
            }
@@ -162,11 +165,32 @@ void lockbox_fn()
        {
            display=inNum;
            keypad_function();
+           if(key_pressed==11&&passcode_complete==1)
+           {
+               lock_state=3;
+               memcpy(pass_code, inNum, sizeof pass_code);
+               memcpy(inNum, blank, sizeof inNum);
+               passcode_complete=0;
+               display=lock;
+           }
            break;
        }
 
        case(3): //Lock
        {
+           keypad_function();
+           if(0<=key_pressed&&key_pressed<10)
+           {
+               display=inNum;
+           }
+           if(key_pressed==10&&passcode_complete==1&&memcmp(inNum,pass_code,4)==0)
+           {
+               lock_state=1;
+               memcpy(pass_code, blank, sizeof pass_code);
+               memcpy(inNum, blank, sizeof inNum);
+               passcode_complete=0;
+               display=open;
+           }
            break;
        }
        case(4): //Lockdown
@@ -193,6 +217,6 @@ void main(void)
        show();
        d++;
        if(d==4) {d=0;}
-       delay(200);
+       delay(300);
    }
 }
