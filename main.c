@@ -183,7 +183,7 @@ void lockbox_fn()
            {
                display=inNum;
            }
-           if(key_pressed==10&&passcode_complete==1&&memcmp(inNum,pass_code,4)==0)
+           if(key_pressed==10&&passcode_complete==1&&memcmp(inNum,pass_code,4)==0) // correct code
            {
                lock_state=1;
                memcpy(pass_code, blank, sizeof pass_code);
@@ -191,10 +191,24 @@ void lockbox_fn()
                passcode_complete=0;
                display=open;
            }
+           else if(key_pressed==10&&passcode_complete==1&&memcmp(inNum,pass_code,4)!=0) // wrong code
+           {
+               lock_state=4;
+               memcpy(inNum, blank, sizeof inNum);
+               passcode_complete=0;
+               display=ld;
+               lock_counter=0;
+           }
            break;
        }
        case(4): //Lockdown
        {
+           if(lock_counter>500)
+           {
+               lock_state=3;
+               display=lock;
+           }
+           lock_counter++;
            break;
        }
     }
