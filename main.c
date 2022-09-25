@@ -2,7 +2,7 @@
 #include "string.h"
 
 
-int rowx,colx,ptr,state,counter,k,d,lock_state,lock_counter,key_pressed,passcode_complete;
+int rowx,colx,ptr,state,counter,k,d,lock_state,lock_counter,key_pressed,passcode_complete,no_of_attempts;
 int pass_code[4];
 int *display;
 int inNum[4]={16,16,16,16};
@@ -161,22 +161,40 @@ void lockbox_fn()
            break;
        }
 
-       case(2): //Pre Lock
+       case(2): //Choosing Passcode
        {
            display=inNum;
            keypad_function();
            if(key_pressed==11&&passcode_complete==1)
            {
                lock_state=3;
-               memcpy(pass_code, inNum, sizeof pass_code);
-               memcpy(inNum, blank, sizeof inNum);
                passcode_complete=0;
-               display=lock;
            }
            break;
        }
 
-       case(3): //Lock
+       case(3): //Pre Lock
+       {
+           P5->OUT=~BIT0;
+           if(lock_counter>2000)
+           {
+               lock_state=4;
+               memcpy(pass_code, inNum, sizeof pass_code);
+               memcpy(inNum, blank, sizeof inNum);
+               display=lock;
+               no_of_attempts=0;
+               P5->OUT=BIT0;
+           }
+           keypad_function();
+           if(0<=key_pressed&&key_pressed<10)
+           {
+               lock_state=0;
+           }
+           lock_counter++;
+           break;
+       }
+
+       case(4): //Lock
        {
            keypad_function();
            if(0<=key_pressed&&key_pressed<10)
@@ -190,22 +208,29 @@ void lockbox_fn()
                memcpy(inNum, blank, sizeof inNum);
                passcode_complete=0;
                display=open;
+               no_of_attempts=0;
            }
            else if(key_pressed==10&&passcode_complete==1&&memcmp(inNum,pass_code,4)!=0) // wrong code
            {
-               lock_state=4;
+               no_of_attempts++;
+               display=lock;
+               if(no_of_attempts>=5)
+               {
+                   lock_state=5;
+                   display=ld;
+                   lock_counter=0;
+                   no_of_attempts=0;
+               }
                memcpy(inNum, blank, sizeof inNum);
                passcode_complete=0;
-               display=ld;
-               lock_counter=0;
            }
            break;
        }
-       case(4): //Lockdown
+       case(5): //Lockdown
        {
-           if(lock_counter>500)
+           if(lock_counter>1000)
            {
-               lock_state=3;
+               lock_state=4;
                display=lock;
            }
            lock_counter++;
