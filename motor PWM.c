@@ -82,14 +82,17 @@ void timer_init()
 {
     //Timer_A0 uses SMCLK (low-speed subsystem master clock)
     TIMER_A0->CTL &= ~(BIT8 | BIT9 ); //reset bits
-    TIMER_A0->CTL |= BIT9; //bit 8 to 9: timer clock source select. 10b = SMCLK
+    TIMER_A0->CTL |= BIT9; //bit 8 to 9: timer clock source select. 10b = SMCLK (also TIMER_A_CTL_TASSEL_2)
     TIMER_A0->CTL &= ~(BIT7 | BIT6 ); //bit 6 to 7: input divider. 00b = /1
     TIMER_A0->CTL &= ~(BIT4 | BIT5 ); //reset bits
-    TIMER_A0->CTL |= BIT4; //bit 4 to 5: mode control. 01b = up mode: counter counts up to TAxCCR0
+    TIMER_A0->CTL |= BIT4; //bit 4 to 5: mode control. 01b = up mode: counter counts up to TAxCCR0 (also TIMER_A_CTL_MC_1)
 //    TIMER_A0->CCTL[0] |= BIT4; // bit 4: CCR0 interrupt enable. 1b = interrupt enabled
 
+    TIMER_A0->CCTL[1] = TIMER_A_CCTLN_OUTMOD_7; // output mode
+    TIMER_A0->CCTL[2] = TIMER_A_CCTLN_OUTMOD_7;
+
     //Setting up capture/compare registers
-    TIMER_A0->CCR[0] = PWM_TIMER_COUNTER_PERIOD; //TA1CCR0 is the period of the timer, 10kHz
+    TIMER_A0->CCR[0] = PWM_TIMER_COUNTER_PERIOD; //TA1CCR0 is the period of the timer, at 10kHz
 }
 
 void init_adc()
@@ -110,7 +113,7 @@ void init_adc()
     ADC14->CTL0 |= (1 << 9); // ADC14SHT0x to sample and hold time 0011b = 32 (11-8)
     ADC14->CTL0 |= (1 << 8); // ADC14SHT0x to sample and hold time 0011b = 32 (11-8)
     ADC14->CTL0 |= (1 << 4); //ADC14ON to 1b - 4th
-    P5->SEL1 |= BIT1;
+    P5->SEL1 |= BIT1; // select ADC function on P5
     P5->SEL0 |= BIT1;
     ADC14->MCTL[0] &= ~(0x1F); //reset to all zeros
     ADC14->MCTL[0] |= 1 << 2; // 00010b = If ADC14DIF = 0: A2; If ADC14DIF = 1: Ain+ = A2, Ain- = A3
@@ -123,6 +126,8 @@ void init_gpio()
     P4->DIR|=0b11111111; // 7 segment display
     P9->DIR|=BIT4; // provide HIGH (3.3V) to top of pot
     P2->DIR|=BIT4|BIT5; // Timer outputs to motor
+    P2->SEL1 &= ~(BIT4|BIT5); // select TA0.1 an TA0.2 motor function
+    P2->SEL0 |= (BIT4|BIT5);
 }
 
 void read_adc()
@@ -135,7 +140,7 @@ void read_adc()
 void map_result()
 {
     // map pot dial location to PWM percentage
-    conversion_result = conversion_result*1200/16384;
+    conversion_result = conversion_result*PWM_TIMER_COUNTER_PERIOD/16384;
 }
 
 void convert_to_array()
