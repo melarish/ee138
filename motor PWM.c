@@ -5,8 +5,10 @@
 #include <stdlib.h>
 
 uint16_t conversion_result;
+uint16_t mapped_result;
 int PWM_TIMER_COUNTER_PERIOD=1200;
 int d=0;
+int counter;
 int sseg_table[11]=
 {
  0b11000000,0b11111001,0b10100100,0b10110000, //0,1,2,3
@@ -33,6 +35,15 @@ void show()
     }
     P8->OUT=p8_table[d];
     P4->OUT=output;
+    if (counter <0 )
+    {
+    P5->OUT=~BIT0;
+    }
+    else
+    {
+    P5->OUT=BIT0;
+    }
+
 
 }
 
@@ -54,7 +65,6 @@ void simple_clock_init(void)
 
      //Clock source: DCO, nominal DCO frequency: 12MHz
     CS->KEY = 0x695A; //unlock CS registers
-//    CS->CTL0 |= BIT(18) | BIT(16); //bit 16~18 DCORSEL frequency range select 101b = 48Mhz
     CS->CTL0 |= BIT(17) | BIT(16); //bit 16~18 DCORSEL frequency range select 011b = Nominal DCO Frequency (MHz): 12;
     CS->CTL0 |= BIT(23); //bit 23 - DCOEN, enables DCO oscillator
 
@@ -67,8 +77,6 @@ void simple_clock_init(void)
     //clock module that uses DCO: SMCLK
     CS->CTL1 |= BIT(29);
     CS->CTL1 &= ~(BIT(28) | BIT(29) | BIT(30)); //SMCLK source divider = 1, 000b = f(SMCLK)/1
-//    CS->CTL1 &= ~(BIT(28) | BIT(30)); //SMCLK source divider = 4, 010b = f(SMCLK)/4
-//    CS->CTL1 |= BIT(28) | BIT(30); //SMCLK source divider = 128, 111b
     CS->CTL1 &= ~(BIT4 | BIT5 | BIT6 ); //reset all bits
     CS->CTL1 |= 0x3; //bits 4 to 6 - SELS, selects SMCLK source. 011b = DCOCLK (by default)
     CS->CLKEN |= BIT3; //bit 3 - SMCLK_EN, enable SMCLK (by default)
@@ -86,13 +94,20 @@ void timer_init()
     TIMER_A0->CTL &= ~(BIT7 | BIT6 ); //bit 6 to 7: input divider. 00b = /1
     TIMER_A0->CTL &= ~(BIT4 | BIT5 ); //reset bits
     TIMER_A0->CTL |= BIT4; //bit 4 to 5: mode control. 01b = up mode: counter counts up to TAxCCR0 (also TIMER_A_CTL_MC_1)
-//    TIMER_A0->CCTL[0] |= BIT4; // bit 4: CCR0 interrupt enable. 1b = interrupt enabled
-
     TIMER_A0->CCTL[1] = TIMER_A_CCTLN_OUTMOD_7; // output mode
     TIMER_A0->CCTL[2] = TIMER_A_CCTLN_OUTMOD_7;
-
     //Setting up capture/compare registers
-    TIMER_A0->CCR[0] = PWM_TIMER_COUNTER_PERIOD; //TA1CCR0 is the period of the timer, at 10kHz
+    TIMER_A0->CCR[0] = PWM_TIMER_COUNTER_PERIOD; //TA0CCR0 is the period of the timer, at 10kHz
+
+    //timer A1
+    TIMER_A1->CTL &= ~(BIT8 | BIT9 ); //reset bits
+    TIMER_A1->CTL |= BIT9; //bit 8 to 9: timer clock source select. 10b = SMCLK
+    TIMER_A1->CTL |= (BIT7 | BIT6 ); //bit 6 to 7: input divider. 11b = /8
+    TIMER_A1->CTL &= ~(BIT4 | BIT5 ); //reset bits
+    TIMER_A1->CTL |= BIT4; //bit 4 to 5: mode control. 01b = up mode: counter counts up to TAxCCR0
+    TIMER_A1->CCTL[0] |= BIT4; // bit 4: CCR0 interrupt enable. 1b = interrupt enabled
+    //Setting up capture/compare registers
+    TIMER_A1->CCR[0] =  7500 ; //TA1CCR0 is the period of the timer
 }
 
 void init_adc()
@@ -130,6 +145,11 @@ void init_gpio()
     P2->SEL0 |= (BIT4|BIT5);
 }
 
+void init_encoder()
+{
+    P3->DIR&=~BIT6; //Phase A encoder -> These pins trigger interrupt
+    P5->DIR&=~BIT3; //Phase B encoder -> These pins trigger interrupt
+}
 void read_adc()
 {
     ADC14->CTL0 |= (1 << 0); //ADC start Conversion=1 - 0th bit
@@ -140,21 +160,59 @@ void read_adc()
 void map_result()
 {
     // map pot dial location to PWM percentage
-    conversion_result = conversion_result*PWM_TIMER_COUNTER_PERIOD/16384;
+    mapped_result = conversion_result*PWM_TIMER_COUNTER_PERIOD/16384;
 }
 
-void convert_to_array()
+
+void init_interrupt()
 {
-    int result = (conversion_result*3.3*1000)/16384;
-    display[0] = result/1000;
-    result = result %1000;
-    display[1] = result/100;
-    result = result %100;
-    display[2] = result/10;
-    result = result %10;
-    display[3] = result/1;
+    //NVIC->ISER[0] = 1<<((TA1_0_IRQn) & 31); //TA1_0_IRQn is the interrupt number for Timer A1
+    NVIC->ISER[1] = 1<<((PORT3_IRQn) & 0x1F); //Enable NVIC PORT3 interrupt
+    NVIC->ISER[1] = 1<<((PORT5_IRQn) & 0x1F); //Enable NVIC PORT 5interrupt
+    NVIC->IP[37] = 0x0; // set priority
+    NVIC->IP[39]|= BIT1; // set priority
+    P3->IES |= BIT6;//High to low transition for bit1
+    P5->IES |= BIT3;//High to low transition for bit4
+    P3->IFG=0;//clear all the interrupt flags
+    P5->IFG=0;//clear all the interrupt flags
+    P3->IE |= BIT6;// Enable interrupt for P3.6
+    P5->IE |= BIT3;// Enable interrupt for P5.3
+    P3->REN |=BIT6; //pull up resistor for P3.6
+    P5->REN |=BIT3;  //pull up resistor for P5.3
+}
+
+void PORT3_IRQHandler(void)
+{
+    if (P3->IV == 0x0E) //check if P3.6 is the interrupt source
+    {
+        if (P5->IN & BIT3)
+        {
+            counter--;
+        }
+        else
+        {
+            counter++;
+        }
+    }
 
 }
+
+void PORT5_IRQHandler(void)
+{
+    if (P5->IV == 0x08) //check if P5.3 is the interrupt source
+    {
+        if (P3->IN & BIT6)
+        {
+            counter--;
+        }
+        else
+        {
+            counter++;
+        }
+    }
+
+}
+
 
 void main(void)
 {
@@ -164,15 +222,15 @@ void main(void)
     timer_init();
     init_adc();
     init_gpio();
+    init_encoder();
+    init_interrupt();
 
     while (1) //infinite loop
     {
            read_adc();    // Start conversion, polling, and read result.
            map_result();
-           TIMER_A0->CCR[1] = conversion_result; // PWM edges
-           TIMER_A0->CCR[2] = PWM_TIMER_COUNTER_PERIOD - conversion_result;
-
-//           convert_to_array();
+           TIMER_A0->CCR[1] = mapped_result; // PWM edges
+            TIMER_A0->CCR[2] = PWM_TIMER_COUNTER_PERIOD - mapped_result;
 //           show();
 //            d++;
 //            if(d==4) {d=0;}
