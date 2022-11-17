@@ -7,10 +7,10 @@
 int rowx,colx,ptr, d,state,debounce_counter,k,key_pressed;
 int *display;
 int inNum[4]={0,0,0,0};
-int Tx_length = 4; // there are 30 char. to send
-int Rx_length=15;
+int Tx_length = 4; // we can only see 4 numbers on the display
+int Rx_length=4;
 int Tx_cnt,Rx_cnt=0;
-char inmsg[100];
+char inmsg;
 int sseg_table[11]=
 {
  0b11000000,0b11111001,0b10100100,0b10110000, //0,1,2,3
@@ -172,10 +172,10 @@ void init_gpio()
 
 void init_interrupt()
 {
-    NVIC->ISER[0] = 1<<((EUSCIA2_IRQn) & 31); //EUSCIA2_IRQn is the interrupt number for UART
+    NVIC->ISER[0] = 1<<((EUSCIA2_IRQn) & 31); // EUSCIA2_IRQn is the interrupt number for UART
     NVIC->IP[18] = 0xF; // set priority
     EUSCI_A2->IE = 0x0000; // disable interrupt
-    EUSCI_A2->IE |= EUSCI_A_IE_RXIE; //enable receive interrupt from UART
+    EUSCI_A2->IE |= EUSCI_A_IE_RXIE; // enable receive interrupt from UART
     EUSCI_A2->IFG = 0;
 }
 void EUSCIA2_IRQHandler()
@@ -183,40 +183,51 @@ void EUSCIA2_IRQHandler()
     uint8_t iv_val = EUSCI_A2->IV;
     if (iv_val & 0x4) //if transmit buffer empty
      {
-        if(Tx_cnt < Tx_length) // If more to send.
+        if(Tx_cnt < Tx_length) // if more to send.
          {
             EUSCI_A2->TXBUF = inNum[Tx_cnt];
             Tx_cnt++;
          }
-        else // If done with sending
+        else // if done with sending
          {
-            EUSCI_A2->IE &= ~0x0002; // Disable TX interrupt
+            EUSCI_A2->IE &= ~0x0002; // disable TX interrupt
+            Tx_cnt = 0;
          }
      }
 
-    if (iv_val & 0x2) //if receive buffer full
+//        Whenever a character is received from the PC,
+//        it is displayed on the 7-segment display sequentially.  Only the last 4 characters will be shown on the 7-
+//        segment display.   The transmit and receive functions can happen at the same time.
+    if (iv_val & 0x2) // if receive buffer full
     {
-         if(Rx_cnt < Rx_length) // If more to receive.
+         if(Rx_cnt < Rx_length) // if more to receive.
          {
-             inmsg[Rx_cnt] = EUSCI_A2->RXBUF; //save to inmsg arrary
+             inmsg = EUSCI_A2->RXBUF; // save to inmsg char variable
+             int msg = inmsg - '0'; // convert char to int
+             // if numeric, add to inNum array
+             if(msg>=0 && msg <10)
+             {
+                 inNum[ptr]=msg;
+                 ptr++;
+                 if(ptr==4) {ptr=0;}
+             }
              Rx_cnt++;
          }
-        else // If done with receiving
+        else // if done with receiving
          {
-            EUSCI_A2->IE &= ~0x0001; // Disable RX interrupt
+             Rx_cnt = 0;
          }
      }
-
 }
 
 void UART_init()
 {
-   EUSCI_A2->CTLW0 |= EUSCI_A_CTLW0_SWRST; //enable reset
-   EUSCI_A2->CTLW0 |= EUSCI_A_CTLW0_SSEL__SMCLK; //smcl for this peripheral
-   EUSCI_A2->MCTLW |= EUSCI_A_MCTLW_OS16; // over sampling mode (n=freq/Baud rate>16) =(12Meg/9600 =1250)
-   EUSCI_A2->BRW =78;  //0-15 bit n/16=78
-   EUSCI_A2->MCTLW|=BIT4|BIT5; //UCBRFx=2 (remainder from the above calculation)
-   EUSCI_A2->CTLW0 &= ~EUSCI_A_CTLW0_SWRST;//disable reset
+   EUSCI_A2->CTLW0 |= EUSCI_A_CTLW0_SWRST; // enable reset
+   EUSCI_A2->CTLW0 |= EUSCI_A_CTLW0_SSEL__SMCLK; // use smclk for this peripheral
+   EUSCI_A2->MCTLW |= EUSCI_A_MCTLW_OS16; // over sampling mode (n = freq/Baud rate = 12Meg/9600 = 1250 > 16)
+   EUSCI_A2->BRW =78;  // 0-15 bit n/16=78
+   EUSCI_A2->MCTLW|=BIT4|BIT5; // UCBRFx=2 (remainder from the above calculation)
+   EUSCI_A2->CTLW0 &= ~EUSCI_A_CTLW0_SWRST;// disable reset
 }
 void main(void)
 {
