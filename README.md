@@ -6,3 +6,5 @@ Code snippets from EE138 - Embedded Control System Design at San Jose State Univ
 * ADC voltage reader / potentiometer voltage adjuster
 * Pushbutton interrupt counter
 * Digital Filter using Timer interrupts
+* PWM controlled motor and rpm encoder
+* UART transmit and receive
